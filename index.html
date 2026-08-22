@@ -270,28 +270,14 @@
     </select>
 
     <select id="genreSelect">
+      <option value="diatonic" selected>Random Diatonic Chords (In-Key)</option>
       <option value="custom">Custom Manual Mode</option>
-      <option value="ex_boogie">🎹 Boogie-Woogie Bass Patterns</option>
-      <option value="ex_walking">🎷 Walking Bass Lines</option>
-      <option value="ex_blues_licks">🎸 Blues Licks & Pentatonic Runs</option>
       <option value="ex_ninths">★ ALL 9th Chords Mix</option>
       <option value="ex_sixths">★ 6th Chords Mix</option>
-      <option value="ex_aug_dim">★ Aug & Dim Triads Mix</option>
       <option value="ex_all_triads">★ ALL Triads Mix</option>
       <option value="ex_all_sevenths">★ ALL 7th Chords Mix</option>
-      <option value="ex_shells">★ Jazz Shell Voicings Mix</option>
-      <option value="ex_triads_power">★ Triads + Power Chords Mix</option>
       <option value="ex_all_chords">★ ULTIMATE MIX</option>
       <option value="ex_inversions">Random Inversions</option>
-      <option value="ex_sus">Exercise: All Sus Chords</option>
-      <option value="ex_minor">Exercise: All Minor Chords</option>
-      <option value="ex_dim">Exercise: All Diminished Chords</option>
-      <option value="ex_aug">Exercise: All Augmented Chords</option>
-      <option value="ex_power">Exercise: Power Chords</option>
-      <option value="ex_maj7">Exercise: Major 7th Chords</option>
-      <option value="ex_m7">Exercise: Minor 7th Chords</option>
-      <option value="ex_dom7">Exercise: Dominant 7th Chords</option>
-      <option value="diatonic">Diatonic Triads</option>
       <option value="pop">Pop Progression</option>
       <option value="blues">Blues Progression</option>
       <option value="jazz">Jazz Progression</option>
@@ -303,7 +289,6 @@
       <option value="4" selected>4 Measures</option>
       <option value="6">6 Measures</option>
       <option value="8">8 Measures</option>
-      <option value="10">10 Measures</option>
     </select>
 
     <select id="modeSelect">
@@ -325,23 +310,9 @@
       <option value="Minor">Minor Triad</option>
       <option value="Aug">Augmented</option>
       <option value="Dim">Diminished</option>
-      <option value="Sus2">Sus2</option>
-      <option value="Sus4">Sus4</option>
-      <option value="Maj6">Major 6th</option>
-      <option value="m6">Minor 6th</option>
       <option value="Dom7">Dominant 7th</option>
       <option value="Maj7">Major 7th</option>
       <option value="m7">Minor 7th</option>
-      <option value="m7b5">Half-Diminished 7th</option>
-      <option value="dim7">Fully-Diminished 7th</option>
-      <option value="Dom9">Dominant 9th</option>
-      <option value="Maj9">Major 9th</option>
-      <option value="m9">Minor 9th</option>
-      <option value="Add9">Add 9</option>
-      <option value="Shell3">Shell Root-3rd-7th</option>
-      <option value="Shell7">Shell Root-7th-3rd</option>
-      <option value="Power">Power Chord</option>
-      <option value="PowerOct">Power Chord + Octave</option>
     </select>
 
     <select id="inversionSelect">
@@ -349,7 +320,6 @@
       <option value="1">1st Inversion</option>
       <option value="2">2nd Inversion</option>
       <option value="3">3rd Inversion</option>
-      <option value="4">4th Inversion</option>
     </select>
 
     <button id="nextChordBtn" style="display:none;">
@@ -502,6 +472,9 @@
   let chordWasCompleted = false;
   let currentProgressionStep = 0;
 
+  // Cache generated random sequence per step so scrolling/re-rendering stays consistent
+  const stepCache = {};
+
   const NOTE_NAMES = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
   const DISPLAY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -510,10 +483,6 @@
     Minor: [0, 3, 7],
     Aug: [0, 4, 8],
     Dim: [0, 3, 6],
-    Sus2: [0, 2, 7],
-    Sus4: [0, 5, 7],
-    Maj6: [0, 4, 7, 9],
-    m6: [0, 3, 7, 9],
     Dom7: [0, 4, 7, 10],
     Maj7: [0, 4, 7, 11],
     m7: [0, 3, 7, 10],
@@ -522,11 +491,8 @@
     Dom9: [0, 4, 7, 10, 14],
     Maj9: [0, 4, 7, 11, 14],
     m9: [0, 3, 7, 10, 14],
-    Add9: [0, 4, 7, 14],
-    Shell3: [0, 4, 10],
-    Shell7: [0, 10, 16],
-    Power: [0, 7],
-    PowerOct: [0, 7, 12]
+    Maj6: [0, 4, 7, 9],
+    m6: [0, 3, 7, 9]
   };
 
   const KEY_ROOTS = {
@@ -534,118 +500,21 @@
     'F#': 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11
   };
 
-  const DIATONIC_SCALE_ROOTS = [0, 2, 4, 5, 7, 9, 11];
+  // Diatonic chord structures for Major keys (degree 0 to 6)
+  const DIATONIC_MAJOR_DEGREES = [
+    { rootOffset: 0, type: 'Major', roman: 'I' },
+    { rootOffset: 2, type: 'Minor', roman: 'ii' },
+    { rootOffset: 4, type: 'Minor', roman: 'iii' },
+    { rootOffset: 5, type: 'Major', roman: 'IV' },
+    { rootOffset: 7, type: 'Major', roman: 'V' },
+    { rootOffset: 9, type: 'Minor', roman: 'vi' },
+    { rootOffset: 11, type: 'Dim', roman: 'vii°' }
+  ];
 
   const GENRE_PROGRESSIONS = {
-    diatonic: {
-      roman: ['I (Tonic)', 'IV (Subdominant)', 'V (Dominant)'],
-      roots: [0, 5, 7],
-      types: ['Major', 'Major', 'Major']
-    },
-    ex_boogie: {
-      roman: ['I Boogie', 'IV Boogie', 'V Boogie'],
-      customPatterns: [
-        [0, 7, 9, 7],
-        [5, 12, 14, 12],
-        [7, 14, 16, 14]
-      ]
-    },
-    ex_walking: {
-      roman: ['I Walking', 'IV Walking', 'V Walking'],
-      customPatterns: [
-        [0, 4, 7, 9],
-        [5, 9, 12, 14],
-        [7, 11, 14, 16]
-      ]
-    },
-    ex_blues_licks: {
-      roman: ['Minor Blues Lick', 'Blues Lick', 'Blues Resolution'],
-      customPatterns: [
-        [0, 3, 5],
-        [6, 7, 10],
-        [12, 10, 7]
-      ]
-    },
-    ex_ninths: {
-      roman: ['Imaj9', 'IVmaj9', 'V9', 'iim9'],
-      roots: [0, 5, 7, 2],
-      types: ['Maj9', 'Maj9', 'Dom9', 'm9']
-    },
-    ex_sixths: {
-      roman: ['I6', 'IV6', 'iv6', 'V6'],
-      roots: [0, 5, 5, 7],
-      types: ['Maj6', 'Maj6', 'm6', 'Maj6']
-    },
-    ex_aug_dim: {
-      roman: ['I Aug', 'vii Dim', 'IV Aug', 'vii Dim7'],
-      roots: [0, 11, 5, 11],
-      types: ['Aug', 'Dim', 'Aug', 'dim7']
-    },
-    ex_shells: {
-      roman: ['ii7 Shell', 'V7 Shell', 'Imaj7 Shell'],
-      roots: [2, 7, 0],
-      types: ['Shell3', 'Shell7', 'Shell3']
-    },
-    ex_inversions: {
-      roman: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
-      roots: [0, 2, 4, 5, 7, 9, 11],
-      types: ['Major', 'Minor', 'Minor', 'Major', 'Major', 'Minor', 'Dim']
-    },
-    ex_sus: {
-      roman: ['I Sus2', 'I Sus4', 'IV Sus2', 'V Sus4'],
-      roots: [0, 0, 5, 7],
-      types: ['Sus2', 'Sus4', 'Sus2', 'Sus4']
-    },
-    ex_minor: {
-      roman: ['ii Minor', 'iii Minor', 'vi Minor'],
-      roots: [2, 4, 9],
-      types: ['Minor', 'Minor', 'Minor']
-    },
-    ex_dim: {
-      roman: ['vii° Dim', 'vii°7 Dim7'],
-      roots: [11, 11],
-      types: ['Dim', 'dim7']
-    },
-    ex_aug: {
-      roman: ['I Aug', 'IV Aug', 'V Aug'],
-      roots: [0, 5, 7],
-      types: ['Aug', 'Aug', 'Aug']
-    },
-    ex_power: {
-      roman: ['I Power', 'I Power + Oct', 'IV Power', 'V Power + Oct'],
-      roots: [0, 0, 5, 7],
-      types: ['Power', 'PowerOct', 'Power', 'PowerOct']
-    },
-    ex_maj7: {
-      roman: ['I maj7', 'IV maj7'],
-      roots: [0, 5],
-      types: ['Maj7', 'Maj7']
-    },
-    ex_m7: {
-      roman: ['ii m7', 'iii m7', 'vi m7'],
-      roots: [2, 4, 9],
-      types: ['m7', 'm7', 'm7']
-    },
-    ex_dom7: {
-      roman: ['V7', 'I7'],
-      roots: [7, 0],
-      types: ['Dom7', 'Dom7']
-    },
-    pop: {
-      roman: ['I', 'V', 'vi', 'IV'],
-      roots: [0, 7, 9, 5],
-      types: ['Major', 'Major', 'Minor', 'Major']
-    },
-    blues: {
-      roman: ['I7', 'IV7', 'V7'],
-      roots: [0, 5, 7],
-      types: ['Dom7', 'Dom7', 'Dom7']
-    },
-    jazz: {
-      roman: ['ii7', 'V7', 'Imaj7'],
-      roots: [2, 7, 0],
-      types: ['m7', 'Dom7', 'Maj7']
-    }
+    pop: { roman: ['I', 'V', 'vi', 'IV'], roots: [0, 7, 9, 5], types: ['Major', 'Major', 'Minor', 'Major'] },
+    blues: { roman: ['I7', 'IV7', 'V7'], roots: [0, 5, 7], types: ['Dom7', 'Dom7', 'Dom7'] },
+    jazz: { roman: ['ii7', 'V7', 'Imaj7'], roots: [2, 7, 0], types: ['m7', 'Dom7', 'Maj7'] }
   };
 
   const keySelect = document.getElementById('keySelect');
@@ -712,6 +581,12 @@
     return { duration: 'q', units: 4, beats: 1 };
   }
 
+  // Pseudo-random seed calculation per step so scrolling stays stable
+  function getSeededRandom(step) {
+    const x = Math.sin(step * 9999 + 12345) * 10000;
+    return x - Math.floor(x);
+  }
+
   function getChordMidisForStep(stepIndex) {
     const key = keySelect.value;
     const clef = clefSelect.value;
@@ -722,46 +597,53 @@
 
     let rootMidi = 60;
     let offsets = [0, 4, 7];
+    let romanLabel = '';
 
-    if (GENRE_PROGRESSIONS[genre] && GENRE_PROGRESSIONS[genre].customPatterns) {
-      const prog = GENRE_PROGRESSIONS[genre];
-      const step = stepIndex % prog.customPatterns.length;
-      rootMidi = (baseOctave + 1) * 12 + KEY_ROOTS[key];
-      offsets = prog.customPatterns[step];
-    } else if (genre === 'ex_ninths') {
-      const types = ['Dom9', 'Maj9', 'm9', 'Add9'];
-      const randType = types[stepIndex % types.length];
-      const randRoot = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
-      rootMidi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randRoot) % 12);
-      offsets = CHORD_OFFSETS[randType];
-    } else if (genre === 'ex_sixths') {
-      const types = ['Maj6', 'm6'];
-      const randType = types[stepIndex % types.length];
-      const randRoot = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
-      rootMidi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randRoot) % 12);
-      offsets = CHORD_OFFSETS[randType];
+    const keyRootSemis = KEY_ROOTS[key];
+
+    if (genre === 'diatonic') {
+      const randVal = getSeededRandom(stepIndex);
+      const degreeIndex = Math.floor(randVal * DIATONIC_MAJOR_DEGREES.length);
+      const degree = DIATONIC_MAJOR_DEGREES[degreeIndex];
+
+      rootMidi = (baseOctave + 1) * 12 + ((keyRootSemis + degree.rootOffset) % 12);
+      offsets = CHORD_OFFSETS[degree.type];
+      romanLabel = degree.roman;
+    } else if (genre === 'ex_inversions') {
+      const randVal = getSeededRandom(stepIndex);
+      const degreeIndex = Math.floor(randVal * DIATONIC_MAJOR_DEGREES.length);
+      const degree = DIATONIC_MAJOR_DEGREES[degreeIndex];
+      
+      inversion = Math.floor(getSeededRandom(stepIndex * 3) * 3);
+      rootMidi = (baseOctave + 1) * 12 + ((keyRootSemis + degree.rootOffset) % 12);
+      offsets = CHORD_OFFSETS[degree.type];
+      romanLabel = `${degree.roman} (Inv ${inversion})`;
     } else if (genre === 'ex_all_chords') {
-      const allTypes = Object.keys(CHORD_OFFSETS);
-      const randType = allTypes[stepIndex % allTypes.length];
-      const randRoot = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
-      rootMidi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randRoot) % 12);
-      offsets = CHORD_OFFSETS[randType];
+      const types = Object.keys(CHORD_OFFSETS);
+      const typeIndex = Math.floor(getSeededRandom(stepIndex) * types.length);
+      const randDegree = Math.floor(getSeededRandom(stepIndex * 2) * 7);
+      
+      const type = types[typeIndex];
+      const rootOffset = DIATONIC_MAJOR_DEGREES[randDegree].rootOffset;
+      rootMidi = (baseOctave + 1) * 12 + ((keyRootSemis + rootOffset) % 12);
+      offsets = CHORD_OFFSETS[type];
+      romanLabel = type;
     } else if (genre !== 'custom' && GENRE_PROGRESSIONS[genre]) {
       const prog = GENRE_PROGRESSIONS[genre];
       const step = stepIndex % prog.roman.length;
-      const keyRootSemitone = KEY_ROOTS[key];
-      const offsetSemitone = prog.roots[step];
-      rootMidi = (baseOctave + 1) * 12 + ((keyRootSemitone + offsetSemitone) % 12);
+      rootMidi = (baseOctave + 1) * 12 + ((keyRootSemis + prog.roots[step]) % 12);
       offsets = CHORD_OFFSETS[prog.types[step]];
+      romanLabel = prog.roman[step];
     } else {
       if (mode === 'single') {
-        const randOffset = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
-        const midi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randOffset) % 12);
-        return [midi + transposeSemitones];
+        const randOffset = DIATONIC_MAJOR_DEGREES[stepIndex % 7].rootOffset;
+        const midi = (baseOctave + 1) * 12 + ((keyRootSemis + randOffset) % 12);
+        return { midis: [midi + transposeSemitones], roman: 'Single' };
       }
       const type = typeSelect.value;
-      rootMidi = (baseOctave + 1) * 12 + KEY_ROOTS[key];
+      rootMidi = (baseOctave + 1) * 12 + keyRootSemis;
       offsets = CHORD_OFFSETS[type] || [0, 4, 7];
+      romanLabel = type;
     }
 
     let chordMidis = offsets.map(offset => rootMidi + offset + transposeSemitones);
@@ -774,7 +656,7 @@
       chordMidis.sort((a, b) => a - b);
     }
 
-    return chordMidis;
+    return { midis: chordMidis, roman: romanLabel };
   }
 
   function buildMeasureNotes(measureMidis, duration, units, mode) {
@@ -802,23 +684,9 @@
       return notes;
     }
 
-    if (mode === 'broken') {
+    if (mode === 'broken' || mode === 'arpeggio') {
       for (let i = 0; i < units; i++) {
         const midi = measureMidis[i % measureMidis.length];
-        notes.push(new VF.StaveNote({
-          clef: clefSelect.value,
-          keys: [midiToVexKey(midi)],
-          duration: duration
-        }));
-      }
-      return notes;
-    }
-
-    if (mode === 'arpeggio') {
-      for (let i = 0; i < units; i++) {
-        const cycle = Math.floor(i / measureMidis.length);
-        const index = i % measureMidis.length;
-        const midi = measureMidis[index] + (cycle * 12);
         notes.push(new VF.StaveNote({
           clef: clefSelect.value,
           keys: [midiToVexKey(midi)],
@@ -876,14 +744,6 @@
     if (genre !== 'custom') {
       progressionDisplay.style.display = 'block';
       nextBtn.style.display = 'inline-block';
-
-      const prog = GENRE_PROGRESSIONS[genre];
-      let stepText = `Exercise Step ${currentProgressionStep + 1}`;
-      if (prog && prog.roman && prog.roman.length) {
-        const step = currentProgressionStep % prog.roman.length;
-        stepText = `${prog.roman[step]} — Step ${currentProgressionStep + 1}`;
-      }
-      document.getElementById('romanText').textContent = `${stepText} — Showing ${countOnStaff} Measures`;
     } else {
       progressionDisplay.style.display = 'none';
       nextBtn.style.display = 'none';
@@ -891,7 +751,6 @@
 
     targetMidiSet.clear();
 
-    /* Render distinct upcoming measures across bars */
     for (let i = 0; i < countOnStaff; i++) {
       const stepForMeasure = currentProgressionStep + i;
       const xPos = i * staveWidth;
@@ -903,12 +762,18 @@
 
       stave.setContext(context).draw();
 
-      const measureMidis = getChordMidisForStep(stepForMeasure);
+      const chordData = getChordMidisForStep(stepForMeasure);
+      const measureMidis = chordData.midis;
 
       if (i === 0) {
         measureMidis.forEach(midi => targetMidiSet.add(midi));
         document.getElementById('targetNotes').textContent =
           Array.from(targetMidiSet).sort((a, b) => a - b).map(getNoteFromMidi).join(', ');
+
+        if (genre !== 'custom') {
+          document.getElementById('romanText').textContent =
+            `${chordData.roman || 'In-Key Chord'} — Target Chord (Measure 1 of ${countOnStaff})`;
+        }
       }
 
       try {
@@ -1022,7 +887,7 @@
     const isMatch = target.length === active.length && target.every(midi => activeMidiNotes.has(midi));
 
     if (isMatch) {
-      statusEl.textContent = '✓ Correct!';
+      statusEl.textContent = '✓ Correct! Changing chord...';
       statusEl.className = 'correct';
 
       if (!hasEvaluatedCurrentChord) {
@@ -1048,7 +913,9 @@
           clearKeyboardHighlights();
           drawScore();
           document.getElementById('playedNotes').textContent = 'None';
-        }, 500);
+          statusEl.textContent = 'Play target notes on your keyboard...';
+          statusEl.className = '';
+        }, 400);
       }
       return;
     }
