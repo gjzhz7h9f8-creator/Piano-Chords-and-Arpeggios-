@@ -120,12 +120,6 @@
       color: #38bdf8;
     }
 
-    /*
-      IMPORTANT:
-      The viewport itself scrolls horizontally.
-      This allows 8 or 10 measures to remain readable instead
-      of squeezing each stave down to an unusable width.
-    */
     #notation-viewport {
       background: #ffffff;
       border-radius: 12px;
@@ -485,2773 +479,817 @@
 </div>
 
 <script>
-
-  /*
-   * ============================================================
-   * VEXFLOW
-   * ============================================================
-   */
-
   const VF = Vex.Flow;
-
-  /*
-   * ============================================================
-   * AUDIO
-   * ============================================================
-   */
-
   const synth = new Tone.PolySynth().toDestination();
   const clickSynth = new Tone.MembraneSynth().toDestination();
 
   let audioEnabled = false;
-
-  /*
-   * ============================================================
-   * METRONOME
-   * ============================================================
-   */
-
   let isMetronomeRunning = false;
   let metronomeEventId = null;
 
-  /*
-   * ============================================================
-   * EXERCISE STATE
-   * ============================================================
-   */
-
   let totalAttempts = 0;
   let correctAttempts = 0;
-
   let chordStartTime = Date.now();
   let totalResponseTime = 0;
 
-  /*
-   * This is deliberately NOT reset every time drawScore()
-   * runs. That was one of the bugs in the original version.
-   */
   let hasEvaluatedCurrentChord = false;
-
   let transposeSemitones = 0;
-
   let isFlowModeActive = false;
   let flowTimerInterval = null;
 
   let activeMidiNotes = new Set();
   let targetMidiSet = new Set();
-
-  // True while the current target chord is being shown green
-  // before it is replaced by the next chord.
   let chordWasCompleted = false;
-
   let currentProgressionStep = 0;
 
-  /*
-   * ============================================================
-   * NOTE DATA
-   * ============================================================
-   */
-
-  const NOTE_NAMES = [
-    'c',
-    'c#',
-    'd',
-    'd#',
-    'e',
-    'f',
-    'f#',
-    'g',
-    'g#',
-    'a',
-    'a#',
-    'b'
-  ];
-
-  const DISPLAY_NAMES = [
-    'C',
-    'C#',
-    'D',
-    'D#',
-    'E',
-    'F',
-    'F#',
-    'G',
-    'G#',
-    'A',
-    'A#',
-    'B'
-  ];
+  const NOTE_NAMES = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
+  const DISPLAY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
   const CHORD_OFFSETS = {
-
     Major: [0, 4, 7],
-
     Minor: [0, 3, 7],
-
     Aug: [0, 4, 8],
-
     Dim: [0, 3, 6],
-
     Sus2: [0, 2, 7],
-
     Sus4: [0, 5, 7],
-
     Maj6: [0, 4, 7, 9],
-
     m6: [0, 3, 7, 9],
-
     Dom7: [0, 4, 7, 10],
-
     Maj7: [0, 4, 7, 11],
-
     m7: [0, 3, 7, 10],
-
     m7b5: [0, 3, 6, 10],
-
     dim7: [0, 3, 6, 9],
-
     Dom9: [0, 4, 7, 10, 14],
-
     Maj9: [0, 4, 7, 11, 14],
-
     m9: [0, 3, 7, 10, 14],
-
     Add9: [0, 4, 7, 14],
-
     Shell3: [0, 4, 10],
-
     Shell7: [0, 10, 16],
-
     Power: [0, 7],
-
     PowerOct: [0, 7, 12]
-
   };
 
   const KEY_ROOTS = {
-
-    C: 0,
-    'C#': 1,
-    Db: 1,
-    D: 2,
-    Eb: 3,
-    E: 4,
-    F: 5,
-    'F#': 6,
-    G: 7,
-    Ab: 8,
-    A: 9,
-    Bb: 10,
-    B: 11
-
+    C: 0, 'C#': 1, Db: 1, D: 2, Eb: 3, E: 4, F: 5,
+    'F#': 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11
   };
 
-  const DIATONIC_SCALE_ROOTS = [
-    0,
-    2,
-    4,
-    5,
-    7,
-    9,
-    11
-  ];
-
-  /*
-   * ============================================================
-   * PROGRESSIONS
-   * ============================================================
-   */
+  const DIATONIC_SCALE_ROOTS = [0, 2, 4, 5, 7, 9, 11];
 
   const GENRE_PROGRESSIONS = {
-
     diatonic: {
-      roman: [
-        'I (Tonic)',
-        'IV (Subdominant)',
-        'V (Dominant)'
-      ],
+      roman: ['I (Tonic)', 'IV (Subdominant)', 'V (Dominant)'],
       roots: [0, 5, 7],
-      types: [
-        'Major',
-        'Major',
-        'Major'
-      ]
+      types: ['Major', 'Major', 'Major']
     },
-
     ex_boogie: {
-      roman: [
-        'I Boogie',
-        'IV Boogie',
-        'V Boogie'
-      ],
+      roman: ['I Boogie', 'IV Boogie', 'V Boogie'],
       customPatterns: [
         [0, 7, 9, 7],
         [5, 12, 14, 12],
         [7, 14, 16, 14]
       ]
     },
-
     ex_walking: {
-      roman: [
-        'I Walking',
-        'IV Walking',
-        'V Walking'
-      ],
+      roman: ['I Walking', 'IV Walking', 'V Walking'],
       customPatterns: [
         [0, 4, 7, 9],
         [5, 9, 12, 14],
         [7, 11, 14, 16]
       ]
     },
-
     ex_blues_licks: {
-      roman: [
-        'Minor Blues Lick',
-        'Blues Lick',
-        'Blues Resolution'
-      ],
+      roman: ['Minor Blues Lick', 'Blues Lick', 'Blues Resolution'],
       customPatterns: [
         [0, 3, 5],
         [6, 7, 10],
         [12, 10, 7]
       ]
     },
-
     ex_ninths: {
-      roman: [
-        'Imaj9',
-        'IVmaj9',
-        'V9',
-        'iim9'
-      ],
+      roman: ['Imaj9', 'IVmaj9', 'V9', 'iim9'],
       roots: [0, 5, 7, 2],
-      types: [
-        'Maj9',
-        'Maj9',
-        'Dom9',
-        'm9'
-      ]
+      types: ['Maj9', 'Maj9', 'Dom9', 'm9']
     },
-
     ex_sixths: {
-      roman: [
-        'I6',
-        'IV6',
-        'iv6',
-        'V6'
-      ],
+      roman: ['I6', 'IV6', 'iv6', 'V6'],
       roots: [0, 5, 5, 7],
-      types: [
-        'Maj6',
-        'Maj6',
-        'm6',
-        'Maj6'
-      ]
+      types: ['Maj6', 'Maj6', 'm6', 'Maj6']
     },
-
     ex_aug_dim: {
-      roman: [
-        'I Aug',
-        'vii Dim',
-        'IV Aug',
-        'vii Dim7'
-      ],
+      roman: ['I Aug', 'vii Dim', 'IV Aug', 'vii Dim7'],
       roots: [0, 11, 5, 11],
-      types: [
-        'Aug',
-        'Dim',
-        'Aug',
-        'dim7'
-      ]
+      types: ['Aug', 'Dim', 'Aug', 'dim7']
     },
-
     ex_shells: {
-      roman: [
-        'ii7 Shell',
-        'V7 Shell',
-        'Imaj7 Shell'
-      ],
+      roman: ['ii7 Shell', 'V7 Shell', 'Imaj7 Shell'],
       roots: [2, 7, 0],
-      types: [
-        'Shell3',
-        'Shell7',
-        'Shell3'
-      ]
+      types: ['Shell3', 'Shell7', 'Shell3']
     },
-
     ex_inversions: {
-      roman: [
-        'I',
-        'ii',
-        'iii',
-        'IV',
-        'V',
-        'vi',
-        'vii°'
-      ],
-      roots: [
-        0,
-        2,
-        4,
-        5,
-        7,
-        9,
-        11
-      ],
-      types: [
-        'Major',
-        'Minor',
-        'Minor',
-        'Major',
-        'Major',
-        'Minor',
-        'Dim'
-      ]
+      roman: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
+      roots: [0, 2, 4, 5, 7, 9, 11],
+      types: ['Major', 'Minor', 'Minor', 'Major', 'Major', 'Minor', 'Dim']
     },
-
     ex_sus: {
-      roman: [
-        'I Sus2',
-        'I Sus4',
-        'IV Sus2',
-        'V Sus4'
-      ],
+      roman: ['I Sus2', 'I Sus4', 'IV Sus2', 'V Sus4'],
       roots: [0, 0, 5, 7],
-      types: [
-        'Sus2',
-        'Sus4',
-        'Sus2',
-        'Sus4'
-      ]
+      types: ['Sus2', 'Sus4', 'Sus2', 'Sus4']
     },
-
     ex_minor: {
-      roman: [
-        'ii Minor',
-        'iii Minor',
-        'vi Minor'
-      ],
+      roman: ['ii Minor', 'iii Minor', 'vi Minor'],
       roots: [2, 4, 9],
-      types: [
-        'Minor',
-        'Minor',
-        'Minor'
-      ]
+      types: ['Minor', 'Minor', 'Minor']
     },
-
     ex_dim: {
-      roman: [
-        'vii° Dim',
-        'vii°7 Dim7'
-      ],
+      roman: ['vii° Dim', 'vii°7 Dim7'],
       roots: [11, 11],
-      types: [
-        'Dim',
-        'dim7'
-      ]
+      types: ['Dim', 'dim7']
     },
-
     ex_aug: {
-      roman: [
-        'I Aug',
-        'IV Aug',
-        'V Aug'
-      ],
+      roman: ['I Aug', 'IV Aug', 'V Aug'],
       roots: [0, 5, 7],
-      types: [
-        'Aug',
-        'Aug',
-        'Aug'
-      ]
+      types: ['Aug', 'Aug', 'Aug']
     },
-
     ex_power: {
-      roman: [
-        'I Power',
-        'I Power + Oct',
-        'IV Power',
-        'V Power + Oct'
-      ],
+      roman: ['I Power', 'I Power + Oct', 'IV Power', 'V Power + Oct'],
       roots: [0, 0, 5, 7],
-      types: [
-        'Power',
-        'PowerOct',
-        'Power',
-        'PowerOct'
-      ]
+      types: ['Power', 'PowerOct', 'Power', 'PowerOct']
     },
-
     ex_maj7: {
-      roman: [
-        'I maj7',
-        'IV maj7'
-      ],
+      roman: ['I maj7', 'IV maj7'],
       roots: [0, 5],
-      types: [
-        'Maj7',
-        'Maj7'
-      ]
+      types: ['Maj7', 'Maj7']
     },
-
     ex_m7: {
-      roman: [
-        'ii m7',
-        'iii m7',
-        'vi m7'
-      ],
+      roman: ['ii m7', 'iii m7', 'vi m7'],
       roots: [2, 4, 9],
-      types: [
-        'm7',
-        'm7',
-        'm7'
-      ]
+      types: ['m7', 'm7', 'm7']
     },
-
     ex_dom7: {
-      roman: [
-        'V7',
-        'I7'
-      ],
+      roman: ['V7', 'I7'],
       roots: [7, 0],
-      types: [
-        'Dom7',
-        'Dom7'
-      ]
+      types: ['Dom7', 'Dom7']
     },
-
     pop: {
-      roman: [
-        'I',
-        'V',
-        'vi',
-        'IV'
-      ],
-      roots: [
-        0,
-        7,
-        9,
-        5
-      ],
-      types: [
-        'Major',
-        'Major',
-        'Minor',
-        'Major'
-      ]
+      roman: ['I', 'V', 'vi', 'IV'],
+      roots: [0, 7, 9, 5],
+      types: ['Major', 'Major', 'Minor', 'Major']
     },
-
     blues: {
-      roman: [
-        'I7',
-        'IV7',
-        'V7'
-      ],
-      roots: [
-        0,
-        5,
-        7
-      ],
-      types: [
-        'Dom7',
-        'Dom7',
-        'Dom7'
-      ]
+      roman: ['I7', 'IV7', 'V7'],
+      roots: [0, 5, 7],
+      types: ['Dom7', 'Dom7', 'Dom7']
     },
-
     jazz: {
-      roman: [
-        'ii7',
-        'V7',
-        'Imaj7'
-      ],
-      roots: [
-        2,
-        7,
-        0
-      ],
-      types: [
-        'm7',
-        'Dom7',
-        'Maj7'
-      ]
+      roman: ['ii7', 'V7', 'Imaj7'],
+      roots: [2, 7, 0],
+      types: ['m7', 'Dom7', 'Maj7']
     }
-
   };
 
-  /*
-   * ============================================================
-   * DOM ELEMENTS
-   * ============================================================
-   */
-
-  const keySelect =
-    document.getElementById('keySelect');
-
-  const clefSelect =
-    document.getElementById('clefSelect');
-
-  const genreSelect =
-    document.getElementById('genreSelect');
-
-  const chordsPerPage =
-    document.getElementById('chordsPerPage');
-
-  const modeSelect =
-    document.getElementById('modeSelect');
-
-  const rhythmSelect =
-    document.getElementById('rhythmSelect');
-
-  const typeSelect =
-    document.getElementById('typeSelect');
-
-  const inversionSelect =
-    document.getElementById('inversionSelect');
-
-  const keyboardEl =
-    document.getElementById('keyboard');
-
-  const notationViewport =
-    document.getElementById('notation-viewport');
-
-  const notationError =
-    document.getElementById('notationError');
-
-  /*
-   * ============================================================
-   * KEY SELECT
-   * ============================================================
-   */
+  const keySelect = document.getElementById('keySelect');
+  const clefSelect = document.getElementById('clefSelect');
+  const genreSelect = document.getElementById('genreSelect');
+  const chordsPerPage = document.getElementById('chordsPerPage');
+  const modeSelect = document.getElementById('modeSelect');
+  const rhythmSelect = document.getElementById('rhythmSelect');
+  const typeSelect = document.getElementById('typeSelect');
+  const inversionSelect = document.getElementById('inversionSelect');
+  const keyboardEl = document.getElementById('keyboard');
+  const notationViewport = document.getElementById('notation-viewport');
+  const notationError = document.getElementById('notationError');
 
   Object.keys(KEY_ROOTS).forEach(key => {
-
     if (!['C#', 'Ab'].includes(key)) {
-
-      const option =
-        document.createElement('option');
-
+      const option = document.createElement('option');
       option.value = key;
       option.textContent = `${key} Key`;
-
       keySelect.appendChild(option);
     }
-
   });
-
-  /*
-   * ============================================================
-   * PIANO
-   *
-   * Expanded from C3-C5 to C2-C6 so transposition doesn't
-   * immediately make exercises impossible to play.
-   * ============================================================
-   */
 
   const midiToKeyElMap = {};
 
   for (let midi = 36; midi <= 84; midi++) {
-
-    const noteName =
-      DISPLAY_NAMES[midi % 12];
-
-    const isBlack =
-      noteName.includes('#');
-
-    const keyEl =
-      document.createElement('div');
-
-    keyEl.className =
-      `key ${isBlack ? 'black' : 'white'}`;
-
+    const noteName = DISPLAY_NAMES[midi % 12];
+    const isBlack = noteName.includes('#');
+    const keyEl = document.createElement('div');
+    keyEl.className = `key ${isBlack ? 'black' : 'white'}`;
     keyEl.dataset.midi = midi;
 
-    /*
-     * Mouse
-     */
+    keyEl.addEventListener('mousedown', e => { e.preventDefault(); handleNoteOn(midi); });
+    keyEl.addEventListener('mouseup', e => { e.preventDefault(); handleNoteOff(midi); });
+    keyEl.addEventListener('mouseleave', e => { if (e.buttons) handleNoteOff(midi); });
 
-    keyEl.addEventListener('mousedown', e => {
-      e.preventDefault();
-      handleNoteOn(midi);
-    });
-
-    keyEl.addEventListener('mouseup', e => {
-      e.preventDefault();
-      handleNoteOff(midi);
-    });
-
-    keyEl.addEventListener('mouseleave', e => {
-      if (e.buttons) {
-        handleNoteOff(midi);
-      }
-    });
-
-    /*
-     * Touch
-     */
-
-    keyEl.addEventListener('touchstart', e => {
-      e.preventDefault();
-      handleNoteOn(midi);
-    }, { passive: false });
-
-    keyEl.addEventListener('touchend', e => {
-      e.preventDefault();
-      handleNoteOff(midi);
-    }, { passive: false });
-
-    keyEl.addEventListener('touchcancel', e => {
-      e.preventDefault();
-      handleNoteOff(midi);
-    }, { passive: false });
+    keyEl.addEventListener('touchstart', e => { e.preventDefault(); handleNoteOn(midi); }, { passive: false });
+    keyEl.addEventListener('touchend', e => { e.preventDefault(); handleNoteOff(midi); }, { passive: false });
+    keyEl.addEventListener('touchcancel', e => { e.preventDefault(); handleNoteOff(midi); }, { passive: false });
 
     keyboardEl.appendChild(keyEl);
-
     midiToKeyElMap[midi] = keyEl;
   }
 
-  /*
-   * ============================================================
-   * MIDI -> NOTE NAME
-   * ============================================================
-   */
-
   function getNoteFromMidi(midi) {
-
-    const safeMidi =
-      ((midi % 12) + 12) % 12;
-
-    const name =
-      DISPLAY_NAMES[safeMidi];
-
-    const octave =
-      Math.floor(midi / 12) - 1;
-
+    const safeMidi = ((midi % 12) + 12) % 12;
+    const name = DISPLAY_NAMES[safeMidi];
+    const octave = Math.floor(midi / 12) - 1;
     return `${name}${octave}`;
   }
 
-  /*
-   * ============================================================
-   * MIDI -> VEXFLOW KEY
-   * ============================================================
-   */
-
   function midiToVexKey(midi) {
-
-    const safeMidi =
-      ((midi % 12) + 12) % 12;
-
-    const noteName =
-      NOTE_NAMES[safeMidi];
-
-    const octave =
-      Math.floor(midi / 12) - 1;
-
+    const safeMidi = ((midi % 12) + 12) % 12;
+    const noteName = NOTE_NAMES[safeMidi];
+    const octave = Math.floor(midi / 12) - 1;
     return `${noteName}/${octave}`;
   }
 
-  /*
-   * ============================================================
-   * RHYTHM INFORMATION
-   *
-   * THIS IS THE IMPORTANT STAFF FIX.
-   *
-   * VexFlow voices need to contain exactly the amount of
-   * rhythmic material specified by the time signature.
-   *
-   * 4/4 therefore means:
-   *
-   * Whole    = 1 note
-   * Half     = 2 notes
-   * Quarter  = 4 notes
-   * Eighth   = 8 notes
-   * ============================================================
-   */
-
   function getRhythmInfo() {
-
-    const rhythm =
-      rhythmSelect.value;
-
-    if (rhythm === 'w') {
-      return {
-        duration: 'w',
-        units: 1,
-        beats: 4
-      };
-    }
-
-    if (rhythm === 'h') {
-      return {
-        duration: 'h',
-        units: 2,
-        beats: 2
-      };
-    }
-
-    if (rhythm === '8') {
-      return {
-        duration: '8',
-        units: 8,
-        beats: 0.5
-      };
-    }
-
-    return {
-      duration: 'q',
-      units: 4,
-      beats: 1
-    };
+    const rhythm = rhythmSelect.value;
+    if (rhythm === 'w') return { duration: 'w', units: 1, beats: 4 };
+    if (rhythm === 'h') return { duration: 'h', units: 2, beats: 2 };
+    if (rhythm === '8') return { duration: '8', units: 8, beats: 0.5 };
+    return { duration: 'q', units: 4, beats: 1 };
   }
 
-  /*
-   * ============================================================
-   * GET CHORD FOR EXERCISE STEP
-   * ============================================================
-   */
-
   function getChordMidisForStep(stepIndex) {
-
-    const key =
-      keySelect.value;
-
-    const clef =
-      clefSelect.value;
-
-    const genre =
-      genreSelect.value;
-
-    const mode =
-      modeSelect.value;
-
-    let inversion =
-      parseInt(inversionSelect.value, 10) || 0;
-
-    const baseOctave =
-      clef === 'bass' ? 3 : 4;
+    const key = keySelect.value;
+    const clef = clefSelect.value;
+    const genre = genreSelect.value;
+    const mode = modeSelect.value;
+    let inversion = parseInt(inversionSelect.value, 10) || 0;
+    const baseOctave = clef === 'bass' ? 3 : 4;
 
     let rootMidi = 60;
-
     let offsets = [0, 4, 7];
 
-    /*
-     * Custom pattern exercises
-     */
-
-    if (
-      GENRE_PROGRESSIONS[genre] &&
-      GENRE_PROGRESSIONS[genre].customPatterns
-    ) {
-
-      const prog =
-        GENRE_PROGRESSIONS[genre];
-
-      const step =
-        stepIndex % prog.customPatterns.length;
-
-      const keyRootSemitone =
-        KEY_ROOTS[key];
-
-      rootMidi =
-        (baseOctave + 1) * 12 +
-        keyRootSemitone;
-
-      offsets =
-        prog.customPatterns[step];
-
-    }
-
-    /*
-     * Ninth exercises
-     */
-
-    else if (genre === 'ex_ninths') {
-
-      const types = [
-        'Dom9',
-        'Maj9',
-        'm9',
-        'Add9'
-      ];
-
-      const randType =
-        types[
-          stepIndex % types.length
-        ];
-
-      const randRoot =
-        DIATONIC_SCALE_ROOTS[
-          stepIndex % DIATONIC_SCALE_ROOTS.length
-        ];
-
-      rootMidi =
-        (baseOctave + 1) * 12 +
-        (
-          (KEY_ROOTS[key] + randRoot) % 12
-        );
-
-      offsets =
-        CHORD_OFFSETS[randType];
-
-    }
-
-    /*
-     * Sixth exercises
-     */
-
-    else if (genre === 'ex_sixths') {
-
-      const types = [
-        'Maj6',
-        'm6'
-      ];
-
-      const randType =
-        types[
-          stepIndex % types.length
-        ];
-
-      const randRoot =
-        DIATONIC_SCALE_ROOTS[
-          stepIndex % DIATONIC_SCALE_ROOTS.length
-        ];
-
-      rootMidi =
-        (baseOctave + 1) * 12 +
-        (
-          (KEY_ROOTS[key] + randRoot) % 12
-        );
-
-      offsets =
-        CHORD_OFFSETS[randType];
-
-    }
-
-    /*
-     * Ultimate mix
-     */
-
-    else if (genre === 'ex_all_chords') {
-
-      const allTypes =
-        Object.keys(CHORD_OFFSETS);
-
-      const randType =
-        allTypes[
-          stepIndex % allTypes.length
-        ];
-
-      const randRoot =
-        DIATONIC_SCALE_ROOTS[
-          stepIndex % DIATONIC_SCALE_ROOTS.length
-        ];
-
-      rootMidi =
-        (baseOctave + 1) * 12 +
-        (
-          (KEY_ROOTS[key] + randRoot) % 12
-        );
-
-      offsets =
-        CHORD_OFFSETS[randType];
-
-    }
-
-    /*
-     * Normal progression
-     */
-
-    else if (
-      genre !== 'custom' &&
-      GENRE_PROGRESSIONS[genre]
-    ) {
-
-      const prog =
-        GENRE_PROGRESSIONS[genre];
-
-      const step =
-        stepIndex % prog.roman.length;
-
-      const keyRootSemitone =
-        KEY_ROOTS[key];
-
-      const offsetSemitone =
-        prog.roots[step];
-
-      rootMidi =
-        (baseOctave + 1) * 12 +
-        (
-          (keyRootSemitone + offsetSemitone) % 12
-        );
-
-      offsets =
-        CHORD_OFFSETS[
-          prog.types[step]
-        ];
-
-    }
-
-    /*
-     * Custom mode
-     */
-
-    else {
-
+    if (GENRE_PROGRESSIONS[genre] && GENRE_PROGRESSIONS[genre].customPatterns) {
+      const prog = GENRE_PROGRESSIONS[genre];
+      const step = stepIndex % prog.customPatterns.length;
+      rootMidi = (baseOctave + 1) * 12 + KEY_ROOTS[key];
+      offsets = prog.customPatterns[step];
+    } else if (genre === 'ex_ninths') {
+      const types = ['Dom9', 'Maj9', 'm9', 'Add9'];
+      const randType = types[stepIndex % types.length];
+      const randRoot = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
+      rootMidi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randRoot) % 12);
+      offsets = CHORD_OFFSETS[randType];
+    } else if (genre === 'ex_sixths') {
+      const types = ['Maj6', 'm6'];
+      const randType = types[stepIndex % types.length];
+      const randRoot = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
+      rootMidi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randRoot) % 12);
+      offsets = CHORD_OFFSETS[randType];
+    } else if (genre === 'ex_all_chords') {
+      const allTypes = Object.keys(CHORD_OFFSETS);
+      const randType = allTypes[stepIndex % allTypes.length];
+      const randRoot = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
+      rootMidi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randRoot) % 12);
+      offsets = CHORD_OFFSETS[randType];
+    } else if (genre !== 'custom' && GENRE_PROGRESSIONS[genre]) {
+      const prog = GENRE_PROGRESSIONS[genre];
+      const step = stepIndex % prog.roman.length;
+      const keyRootSemitone = KEY_ROOTS[key];
+      const offsetSemitone = prog.roots[step];
+      rootMidi = (baseOctave + 1) * 12 + ((keyRootSemitone + offsetSemitone) % 12);
+      offsets = CHORD_OFFSETS[prog.types[step]];
+    } else {
       if (mode === 'single') {
-
-        const keySemis =
-          KEY_ROOTS[key];
-
-        const randOffset =
-          DIATONIC_SCALE_ROOTS[
-            stepIndex %
-            DIATONIC_SCALE_ROOTS.length
-          ];
-
-        const midi =
-          (baseOctave + 1) * 12 +
-          (
-            (keySemis + randOffset) % 12
-          );
-
-        return [
-          midi + transposeSemitones
-        ];
-
+        const randOffset = DIATONIC_SCALE_ROOTS[stepIndex % DIATONIC_SCALE_ROOTS.length];
+        const midi = (baseOctave + 1) * 12 + ((KEY_ROOTS[key] + randOffset) % 12);
+        return [midi + transposeSemitones];
       }
-
-      const type =
-        typeSelect.value;
-
-      const keySemis =
-        KEY_ROOTS[key];
-
-      rootMidi =
-        (baseOctave + 1) * 12 +
-        keySemis;
-
-      offsets =
-        CHORD_OFFSETS[type] ||
-        [0, 4, 7];
-
+      const type = typeSelect.value;
+      rootMidi = (baseOctave + 1) * 12 + KEY_ROOTS[key];
+      offsets = CHORD_OFFSETS[type] || [0, 4, 7];
     }
 
-    /*
-     * Build chord.
-     */
-
-    let chordMidis =
-      offsets.map(offset =>
-        rootMidi +
-        offset +
-        transposeSemitones
-      );
-
-    /*
-     * Apply inversion.
-     *
-     * We cycle only as many inversions as there are notes.
-     */
+    let chordMidis = offsets.map(offset => rootMidi + offset + transposeSemitones);
 
     if (chordMidis.length > 1) {
-
-      inversion =
-        inversion %
-        chordMidis.length;
-
-      for (
-        let i = 0;
-        i < inversion;
-        i++
-      ) {
-
+      inversion = inversion % chordMidis.length;
+      for (let i = 0; i < inversion; i++) {
         chordMidis[i] += 12;
       }
-
-      chordMidis.sort(
-        (a, b) => a - b
-      );
+      chordMidis.sort((a, b) => a - b);
     }
 
     return chordMidis;
   }
 
-  /*
-   * ============================================================
-   * BUILD NOTES FOR A MEASURE
-   *
-   * This is where rhythm and playing mode are converted into
-   * actual VexFlow notes.
-   * ============================================================
-   */
-
-  function buildMeasureNotes(
-    measureMidis,
-    duration,
-    units,
-    mode
-  ) {
-
+  function buildMeasureNotes(measureMidis, duration, units, mode) {
     const notes = [];
-
-    /*
-     * Single note
-     */
-
     if (mode === 'single') {
-
-      const midi =
-        measureMidis[0];
-
+      const midi = measureMidis[0];
       for (let i = 0; i < units; i++) {
-
-        notes.push(
-          new VF.StaveNote({
-            clef: clefSelect.value,
-            keys: [
-              midiToVexKey(midi)
-            ],
-            duration: duration
-          })
-        );
+        notes.push(new VF.StaveNote({
+          clef: clefSelect.value,
+          keys: [midiToVexKey(midi)],
+          duration: duration
+        }));
       }
-
       return notes;
     }
-
-    /*
-     * Block chord
-     *
-     * The same chord is repeated for each rhythmic unit.
-     */
 
     if (mode === 'chord') {
-
       for (let i = 0; i < units; i++) {
-
-        notes.push(
-          new VF.StaveNote({
-            clef: clefSelect.value,
-            keys: measureMidis.map(
-              midiToVexKey
-            ),
-            duration: duration
-          })
-        );
+        notes.push(new VF.StaveNote({
+          clef: clefSelect.value,
+          keys: measureMidis.map(midiToVexKey),
+          duration: duration
+        }));
       }
-
       return notes;
     }
-
-    /*
-     * Broken chord
-     *
-     * One chord tone per rhythmic unit.
-     * If there are fewer chord tones than units,
-     * cycle through the chord.
-     */
 
     if (mode === 'broken') {
-
       for (let i = 0; i < units; i++) {
-
-        const midi =
-          measureMidis[
-            i % measureMidis.length
-          ];
-
-        notes.push(
-          new VF.StaveNote({
-            clef: clefSelect.value,
-            keys: [
-              midiToVexKey(midi)
-            ],
-            duration: duration
-          })
-        );
+        const midi = measureMidis[i % measureMidis.length];
+        notes.push(new VF.StaveNote({
+          clef: clefSelect.value,
+          keys: [midiToVexKey(midi)],
+          duration: duration
+        }));
       }
-
       return notes;
     }
 
-    /*
-     * Arpeggio
-     *
-     * Same idea as broken chord, but always moves upward
-     * through the chord and then wraps around.
-     */
-
     if (mode === 'arpeggio') {
-
       for (let i = 0; i < units; i++) {
-
-        const cycle =
-          Math.floor(
-            i / measureMidis.length
-          );
-
-        const index =
-          i % measureMidis.length;
-
-        const midi =
-          measureMidis[index] +
-          cycle * 12;
-
-        notes.push(
-          new VF.StaveNote({
-            clef: clefSelect.value,
-            keys: [
-              midiToVexKey(midi)
-            ],
-            duration: duration
-          })
-        );
+        const cycle = Math.floor(i / measureMidis.length);
+        const index = i % measureMidis.length;
+        const midi = measureMidis[index] + (cycle * 12);
+        notes.push(new VF.StaveNote({
+          clef: clefSelect.value,
+          keys: [midiToVexKey(midi)],
+          duration: duration
+        }));
       }
-
       return notes;
     }
 
     return notes;
   }
 
-  /*
-   * ============================================================
-   * ACCIDENTALS
-   * ============================================================
-   */
-
-  function addAccidentalsToNote(
-    staveNote,
-    vexKeys
-  ) {
-
-    vexKeys.forEach(
-      (key, index) => {
-
-        const pitch =
-          key.split('/')[0];
-
-        if (pitch.includes('#')) {
-
-          staveNote.addModifier(
-            new VF.Accidental('#'),
-            index
-          );
-
-        } else if (
-          pitch.includes('b')
-        ) {
-
-          staveNote.addModifier(
-            new VF.Accidental('b'),
-            index
-          );
-        }
-
+  function addAccidentalsToNote(staveNote, vexKeys) {
+    vexKeys.forEach((key, index) => {
+      const pitch = key.split('/')[0];
+      if (pitch.includes('#')) {
+        staveNote.addModifier(new VF.Accidental('#'), index);
+      } else if (pitch.includes('b')) {
+        staveNote.addModifier(new VF.Accidental('b'), index);
       }
-    );
+    });
   }
-
-  /*
-   * ============================================================
-   * HIGHLIGHT ACTIVE NOTES
-   * ============================================================
-   */
-
-  function applyActiveNoteStyles(
-    staveNote,
-    measureMidis,
-    isTargetMeasure
-  ) {
-
-    if (!isTargetMeasure) {
-      return;
-    }
-
-    measureMidis.forEach(
-      (midi, index) => {
-
-        if (
-          activeMidiNotes.has(midi)
-        ) {
-
-          staveNote.setKeyStyle(
-            index,
-            {
-              fillStyle: '#10b981',
-              strokeStyle: '#10b981'
-            }
-          );
-
-        }
-
-      }
-    );
-  }
-
-  /*
-   * ============================================================
-   * DRAW SCORE
-   * ============================================================
-   */
 
   function drawScore() {
-
-    /*
-     * Remove previous SVG.
-     */
-
     notationViewport.innerHTML = '';
-
-    notationError.style.display =
-      'none';
-
+    notationError.style.display = 'none';
     notationError.textContent = '';
 
-    const countOnStaff =
-      parseInt(
-        chordsPerPage.value,
-        10
-      ) || 1;
-
-    const rhythmInfo =
-      getRhythmInfo();
-
-    /*
-     * Minimum useful width per measure.
-     *
-     * This prevents 8 or 10 measures from becoming tiny.
-     */
-
+    const countOnStaff = parseInt(chordsPerPage.value, 10) || 1;
+    const rhythmInfo = getRhythmInfo();
     const minimumStaveWidth = 150;
-
-    const viewportWidth =
-      notationViewport.clientWidth ||
-      800;
-
-    const availableWidth =
-      Math.max(
-        viewportWidth - 20,
-        320
-      );
-
-    const staveWidth =
-      Math.max(
-        minimumStaveWidth,
-        Math.floor(
-          availableWidth /
-          countOnStaff
-        )
-      );
-
-    const totalWidth =
-      Math.max(
-        320,
-        staveWidth * countOnStaff
-      );
-
-    /*
-     * Renderer.
-     */
+    const viewportWidth = notationViewport.clientWidth || 800;
+    const availableWidth = Math.max(viewportWidth - 20, 320);
+    const staveWidth = Math.max(minimumStaveWidth, Math.floor(availableWidth / countOnStaff));
+    const totalWidth = Math.max(320, staveWidth * countOnStaff);
 
     let renderer;
-
     try {
-
-      renderer =
-        new VF.Renderer(
-          notationViewport,
-          VF.Renderer.Backends.SVG
-        );
-
-      renderer.resize(
-        totalWidth,
-        175
-      );
-
+      renderer = new VF.Renderer(notationViewport, VF.Renderer.Backends.SVG);
+      renderer.resize(totalWidth, 175);
     } catch (error) {
-
-      showNotationError(
-        'Unable to create the VexFlow renderer: ' +
-        error.message
-      );
-
+      showNotationError('Unable to create VexFlow renderer: ' + error.message);
       return;
     }
 
-    const context =
-      renderer.getContext();
+    const context = renderer.getContext();
+    const key = keySelect.value;
+    const clef = clefSelect.value;
+    const genre = genreSelect.value;
+    const mode = modeSelect.value;
 
-    const key =
-      keySelect.value;
-
-    const clef =
-      clefSelect.value;
-
-    const genre =
-      genreSelect.value;
-
-    const mode =
-      modeSelect.value;
-
-    /*
-     * Progression UI
-     */
-
-    const progressionDisplay =
-      document.getElementById(
-        'progressionDisplay'
-      );
-
-    const nextBtn =
-      document.getElementById(
-        'nextChordBtn'
-      );
+    const progressionDisplay = document.getElementById('progressionDisplay');
+    const nextBtn = document.getElementById('nextChordBtn');
 
     if (genre !== 'custom') {
+      progressionDisplay.style.display = 'block';
+      nextBtn.style.display = 'inline-block';
 
-      progressionDisplay.style.display =
-        'block';
-
-      nextBtn.style.display =
-        'inline-block';
-
-      const prog =
-        GENRE_PROGRESSIONS[genre];
-
-      let stepText =
-        `Exercise Step ${
-          currentProgressionStep + 1
-        }`;
-
-      if (
-        prog &&
-        prog.roman &&
-        prog.roman.length
-      ) {
-
-        const step =
-          currentProgressionStep %
-          prog.roman.length;
-
-        stepText =
-          `${prog.roman[step]} — Step ${
-            currentProgressionStep + 1
-          }`;
+      const prog = GENRE_PROGRESSIONS[genre];
+      let stepText = `Exercise Step ${currentProgressionStep + 1}`;
+      if (prog && prog.roman && prog.roman.length) {
+        const step = currentProgressionStep % prog.roman.length;
+        stepText = `${prog.roman[step]} — Step ${currentProgressionStep + 1}`;
       }
-
-      document.getElementById(
-        'romanText'
-      ).textContent =
-        `${stepText} — Showing ${countOnStaff} Measures`;
-
+      document.getElementById('romanText').textContent = `${stepText} — Showing ${countOnStaff} Measures`;
     } else {
-
-      progressionDisplay.style.display =
-        'none';
-
-      nextBtn.style.display =
-        'none';
+      progressionDisplay.style.display = 'none';
+      nextBtn.style.display = 'none';
     }
-
-    /*
-     * Target notes are ONLY the first measure.
-     *
-     * This is the measure the student is currently answering.
-     */
 
     targetMidiSet.clear();
 
-    const firstMeasureMidis =
-      getChordMidisForStep(
-        currentProgressionStep
-      );
-
-    firstMeasureMidis.forEach(
-      midi =>
-        targetMidiSet.add(midi)
-    );
-
-    document.getElementById(
-      'targetNotes'
-    ).textContent =
-      Array.from(targetMidiSet)
-        .sort((a, b) => a - b)
-        .map(getNoteFromMidi)
-        .join(', ');
-
-    /*
-     * Draw every measure.
-     */
-
-    for (
-      let i = 0;
-      i < countOnStaff;
-      i++
-    ) {
-
-      const stepForMeasure =
-        currentProgressionStep + i;
-
-      const xPos =
-        i * staveWidth;
-
-      const stave =
-        new VF.Stave(
-          xPos,
-          15,
-          staveWidth - 5
-        );
-
-      /*
-       * Clef and key signature only need to be placed
-       * at the beginning of the displayed system.
-       */
+    /* Render distinct upcoming measures across bars */
+    for (let i = 0; i < countOnStaff; i++) {
+      const stepForMeasure = currentProgressionStep + i;
+      const xPos = i * staveWidth;
+      const stave = new VF.Stave(xPos, 15, staveWidth - 5);
 
       if (i === 0) {
-
-        stave
-          .addClef(clef)
-          .addKeySignature(key);
-
+        stave.addClef(clef).addKeySignature(key);
       }
 
-      stave
-        .setContext(context)
-        .draw();
+      stave.setContext(context).draw();
 
-      /*
-       * The first bar is the active target.
-       * Other bars are deliberately blank.  Previously drawScore()
-       * generated currentProgressionStep + i for every bar, which
-       * made the progression appear to be copied across multiple
-       * measures.
-       */
-      const isTargetMeasure = (i === 0);
+      const measureMidis = getChordMidisForStep(stepForMeasure);
 
-      const measureMidis =
-        isTargetMeasure
-          ? getChordMidisForStep(
-              currentProgressionStep
-            )
-          : [];
-
-      /*
-       * Build correctly filled measure.
-       */
-
-      let measureNotes;
+      if (i === 0) {
+        measureMidis.forEach(midi => targetMidiSet.add(midi));
+        document.getElementById('targetNotes').textContent =
+          Array.from(targetMidiSet).sort((a, b) => a - b).map(getNoteFromMidi).join(', ');
+      }
 
       try {
+        const measureNotes = buildMeasureNotes(measureMidis, rhythmInfo.duration, rhythmInfo.units, mode);
+        const voice = new VF.Voice({ num_beats: 4, beat_value: 4 });
+        voice.addTickables(measureNotes);
 
-        if (!isTargetMeasure) {
-          /*
-           * Fill non-target measures with rests so VexFlow still
-           * receives a complete 4/4 voice without drawing another
-           * chord.
-           */
-          measureNotes = [];
+        measureNotes.forEach(note => {
+          const keys = note.getKeys();
+          addAccidentalsToNote(note, keys);
 
-          for (let r = 0; r < rhythmInfo.units; r++) {
-            measureNotes.push(
-              new VF.GhostNote({
-                duration: rhythmInfo.duration
-              })
-            );
+          if (i === 0) {
+            keys.forEach((keyString, keyIndex) => {
+              const midi = vexKeyToMidi(keyString);
+              if (chordWasCompleted || activeMidiNotes.has(midi)) {
+                note.setKeyStyle(keyIndex, {
+                  fillStyle: '#10b981',
+                  strokeStyle: '#10b981'
+                });
+              }
+            });
           }
-        } else {
-          measureNotes =
-            buildMeasureNotes(
-              measureMidis,
-              rhythmInfo.duration,
-              rhythmInfo.units,
-              mode
-            );
-        }
+        });
 
-        /*
-         * Safety check.
-         *
-         * A 4/4 voice must have exactly 4 beats.
-         */
-
-        const voice =
-          new VF.Voice({
-            num_beats: 4,
-            beat_value: 4
-          });
-
-        voice.addTickables(
-          measureNotes
-        );
-
-        /*
-         * Accidentals and highlighting.
-         */
-
-        measureNotes.forEach(
-          note => {
-
-            const keys =
-              note.getKeys();
-
-            addAccidentalsToNote(
-              note,
-              keys
-            );
-
-            /*
-             * Highlight the actual target notes.
-             */
-
-            if (i === 0) {
-
-              keys.forEach(
-                (keyString, keyIndex) => {
-
-                  const midi =
-                    vexKeyToMidi(
-                      keyString
-                    );
-
-                  /*
-                   * While the chord is being acknowledged, colour
-                   * the complete target chord green. Otherwise only
-                   * currently held MIDI notes are highlighted.
-                   */
-                  if (
-                    chordWasCompleted ||
-                    activeMidiNotes.has(midi)
-                  ) {
-
-                    note.setKeyStyle(
-                      keyIndex,
-                      {
-                        fillStyle: '#10b981',
-                        strokeStyle: '#10b981'
-                      }
-                    );
-                  }
-
-                }
-              );
-            }
-
-          }
-        );
-
-        /*
-         * Format.
-         *
-         * This is important: the voice is now properly filled
-         * before Formatter is called.
-         */
-
-        new VF.Formatter()
-          .joinVoices([voice])
-          .format(
-            [voice],
-            Math.max(
-              60,
-              staveWidth - 55
-            )
-          );
-
-        voice.draw(
-          context,
-          stave
-        );
-
+        new VF.Formatter().joinVoices([voice]).format([voice], Math.max(60, staveWidth - 55));
+        voice.draw(context, stave);
       } catch (error) {
-
-        console.error(
-          'VexFlow measure error:',
-          error
-        );
-
-        showNotationError(
-          `Staff rendering error in measure ${
-            i + 1
-          }: ${error.message}`
-        );
-
-        /*
-         * Don't stop drawing the remaining measures.
-         */
-
+        console.error('VexFlow measure error:', error);
+        showNotationError(`Staff rendering error in measure ${i + 1}: ${error.message}`);
         continue;
       }
     }
-
-    /*
-     * DO NOT reset chordStartTime here.
-     *
-     * The old code did that every time a key was played,
-     * which made response times inaccurate.
-     */
-
   }
-
-  /*
-   * ============================================================
-   * VEX KEY -> MIDI
-   * ============================================================
-   */
 
   function vexKeyToMidi(vexKey) {
-
-    const parts =
-      vexKey.split('/');
-
-    if (parts.length !== 2) {
-      return null;
-    }
-
-    let note =
-      parts[0].toLowerCase();
-
-    const octave =
-      parseInt(parts[1], 10);
-
+    const parts = vexKey.split('/');
+    if (parts.length !== 2) return null;
+    let note = parts[0].toLowerCase();
+    const octave = parseInt(parts[1], 10);
     const pitchMap = {
-
-      c: 0,
-      'c#': 1,
-      db: 1,
-
-      d: 2,
-      'd#': 3,
-      eb: 3,
-
-      e: 4,
-
-      f: 5,
-      'f#': 6,
-      gb: 6,
-
-      g: 7,
-      'g#': 8,
-      ab: 8,
-
-      a: 9,
-      'a#': 10,
-      bb: 10,
-
-      b: 11
-
+      c: 0, 'c#': 1, db: 1, d: 2, 'd#': 3, eb: 3, e: 4,
+      f: 5, 'f#': 6, gb: 6, g: 7, 'g#': 8, ab: 8, a: 9,
+      'a#': 10, bb: 10, b: 11
     };
-
-    /*
-     * VexFlow key names may theoretically contain
-     * accidental symbols.
-     */
-
-    note =
-      note
-        .replace('♯', '#')
-        .replace('♭', 'b');
-
-    if (
-      pitchMap[note] === undefined
-    ) {
-
-      return null;
-    }
-
-    return (
-      (octave + 1) * 12 +
-      pitchMap[note]
-    );
+    note = note.replace('♯', '#').replace('♭', 'b');
+    if (pitchMap[note] === undefined) return null;
+    return (octave + 1) * 12 + pitchMap[note];
   }
 
-  /*
-   * ============================================================
-   * ERROR DISPLAY
-   * ============================================================
-   */
-
-  function showNotationError(
-    message
-  ) {
-
-    notationError.textContent =
-      message;
-
-    notationError.style.display =
-      'block';
+  function showNotationError(message) {
+    notationError.textContent = message;
+    notationError.style.display = 'block';
   }
-
-  /*
-   * ============================================================
-   * NOTE ON
-   * ============================================================
-   */
 
   function handleNoteOn(midi) {
-
-    /*
-     * Prevent duplicate note-on events.
-     */
-
-    if (
-      activeMidiNotes.has(midi)
-    ) {
-      return;
-    }
-
+    if (activeMidiNotes.has(midi)) return;
     activeMidiNotes.add(midi);
 
-    if (
-      midiToKeyElMap[midi]
-    ) {
-
-      midiToKeyElMap[midi]
-        .classList.add('active');
+    if (midiToKeyElMap[midi]) {
+      midiToKeyElMap[midi].classList.add('active');
     }
 
-    /*
-     * Audio is allowed after Tone.start().
-     */
-
     try {
-
       if (audioEnabled) {
-
-        synth.triggerAttack(
-          Tone.Frequency(
-            midi,
-            'midi'
-          ).toNote()
-        );
-
+        synth.triggerAttack(Tone.Frequency(midi, 'midi').toNote());
       }
-
     } catch (error) {
-
-      console.warn(
-        'Audio error:',
-        error
-      );
+      console.warn('Audio error:', error);
     }
 
     updateFeedback();
   }
-
-  /*
-   * ============================================================
-   * NOTE OFF
-   * ============================================================
-   */
 
   function handleNoteOff(midi) {
-
     activeMidiNotes.delete(midi);
 
-    if (
-      midiToKeyElMap[midi]
-    ) {
-
-      midiToKeyElMap[midi]
-        .classList.remove('active');
+    if (midiToKeyElMap[midi]) {
+      midiToKeyElMap[midi].classList.remove('active');
     }
 
     try {
-
       if (audioEnabled) {
-
-        synth.triggerRelease(
-          Tone.Frequency(
-            midi,
-            'midi'
-          ).toNote()
-        );
-
+        synth.triggerRelease(Tone.Frequency(midi, 'midi').toNote());
       }
-
     } catch (error) {
-
-      console.warn(
-        'Audio release error:',
-        error
-      );
+      console.warn('Audio release error:', error);
     }
 
     updateFeedback();
   }
 
-  /*
-   * ============================================================
-   * FEEDBACK
-   * ============================================================
-   */
-
   function updateFeedback() {
-
-    document.getElementById(
-      'playedNotes'
-    ).textContent =
-      Array.from(activeMidiNotes)
-        .sort((a, b) => a - b)
-        .map(getNoteFromMidi)
-        .join(', ') ||
-      'None';
-
-    /*
-     * Redraw so active target notes turn green.
-     */
+    document.getElementById('playedNotes').textContent =
+      Array.from(activeMidiNotes).sort((a, b) => a - b).map(getNoteFromMidi).join(', ') || 'None';
 
     drawScore();
-
     evaluateMatch();
   }
 
-  /*
-   * ============================================================
-   * MATCH EVALUATION
-   * ============================================================
-   */
-
   function evaluateMatch() {
+    const statusEl = document.getElementById('matchStatus');
 
-    const statusEl =
-      document.getElementById(
-        'matchStatus'
-      );
-
-    /*
-     * Nothing being played.
-     */
-
-    if (
-      activeMidiNotes.size === 0
-    ) {
-
-      statusEl.textContent =
-        'Play target notes on your keyboard...';
-
+    if (activeMidiNotes.size === 0) {
+      statusEl.textContent = 'Play target notes on your keyboard...';
       statusEl.className = '';
-
       return;
     }
 
-    const active =
-      Array.from(activeMidiNotes);
-
-    const target =
-      Array.from(targetMidiSet);
-
-    /*
-     * Exact set comparison.
-     */
-
-    const isMatch =
-      target.length === active.length &&
-      target.every(
-        midi =>
-          activeMidiNotes.has(midi)
-      );
-
-    /*
-     * Correct.
-     */
+    const active = Array.from(activeMidiNotes);
+    const target = Array.from(targetMidiSet);
+    const isMatch = target.length === active.length && target.every(midi => activeMidiNotes.has(midi));
 
     if (isMatch) {
+      statusEl.textContent = '✓ Correct!';
+      statusEl.className = 'correct';
 
-      statusEl.textContent =
-        '✓ Correct!';
-
-      statusEl.className =
-        'correct';
-
-      if (
-        !hasEvaluatedCurrentChord
-      ) {
-
-        hasEvaluatedCurrentChord =
-          true;
-
+      if (!hasEvaluatedCurrentChord) {
+        hasEvaluatedCurrentChord = true;
         totalAttempts++;
         correctAttempts++;
-
-        totalResponseTime +=
-          (
-            Date.now() -
-            chordStartTime
-          ) / 1000;
-
+        totalResponseTime += (Date.now() - chordStartTime) / 1000;
         updateStatsDisplay();
       }
 
-      /*
-       * Automatically move forward.
-       *
-       * First redraw the current chord green, then replace it with
-       * the next target.  Do not call updateFeedback() here because
-       * updateFeedback() itself calls drawScore(), which previously
-       * caused an unnecessary second render.
-       */
       if (!window.__advanceScheduled) {
-
         window.__advanceScheduled = true;
-
         chordWasCompleted = true;
-
-        // Show the completed chord in green.
         drawScore();
 
         setTimeout(() => {
-
           window.__advanceScheduled = false;
-
           currentProgressionStep++;
-
           activeMidiNotes.clear();
-
           chordWasCompleted = false;
-
           hasEvaluatedCurrentChord = false;
-
           chordStartTime = Date.now();
-
           clearKeyboardHighlights();
-
-          // Replace the completed chord with the next target.
           drawScore();
-
-          document.getElementById(
-            'playedNotes'
-          ).textContent = 'None';
-
+          document.getElementById('playedNotes').textContent = 'None';
         }, 500);
       }
-
       return;
     }
 
-    /*
-     * Incorrect note.
-     */
-
-    const hasWrongNote =
-      active.some(
-        midi =>
-          !targetMidiSet.has(midi)
-      );
-
+    const hasWrongNote = active.some(midi => !targetMidiSet.has(midi));
     if (hasWrongNote) {
+      statusEl.textContent = '✕ Incorrect Note';
+      statusEl.className = 'incorrect';
 
-      statusEl.textContent =
-        '✕ Incorrect Note';
-
-      statusEl.className =
-        'incorrect';
-
-      /*
-       * Count the attempt only once.
-       */
-
-      if (
-        !hasEvaluatedCurrentChord
-      ) {
-
-        hasEvaluatedCurrentChord =
-          true;
-
+      if (!hasEvaluatedCurrentChord) {
+        hasEvaluatedCurrentChord = true;
         totalAttempts++;
-
         updateStatsDisplay();
       }
-
     } else {
-
-      statusEl.textContent =
-        '… Incomplete Chord';
-
+      statusEl.textContent = '… Incomplete Chord';
       statusEl.className = '';
     }
   }
 
-  /*
-   * ============================================================
-   * CLEAR PIANO HIGHLIGHTS
-   * ============================================================
-   */
-
   function clearKeyboardHighlights() {
-
-    Object.values(
-      midiToKeyElMap
-    ).forEach(
-      keyEl =>
-        keyEl.classList.remove(
-          'active'
-        )
-    );
+    Object.values(midiToKeyElMap).forEach(keyEl => keyEl.classList.remove('active'));
   }
-
-  /*
-   * ============================================================
-   * STATS
-   * ============================================================
-   */
 
   function updateStatsDisplay() {
-
-    document.getElementById(
-      'statAttempts'
-    ).textContent =
-      totalAttempts;
-
-    const accuracy =
-      totalAttempts > 0
-        ? Math.round(
-            (
-              correctAttempts /
-              totalAttempts
-            ) * 100
-          )
-        : 100;
-
-    document.getElementById(
-      'statAccuracy'
-    ).textContent =
-      `${accuracy}%`;
-
-    const average =
-      correctAttempts > 0
-        ? (
-            totalResponseTime /
-            correctAttempts
-          ).toFixed(1)
-        : '0.0';
-
-    document.getElementById(
-      'statSpeed'
-    ).textContent =
-      `${average}s`;
+    document.getElementById('statAttempts').textContent = totalAttempts;
+    const accuracy = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 100;
+    document.getElementById('statAccuracy').textContent = `${accuracy}%`;
+    const average = correctAttempts > 0 ? (totalResponseTime / correctAttempts).toFixed(1) : '0.0';
+    document.getElementById('statSpeed').textContent = `${average}s`;
   }
 
-  /*
-   * ============================================================
-   * TRANSPOSE UP
-   * ============================================================
-   */
+  document.getElementById('transUpBtn').addEventListener('click', () => {
+    transposeSemitones++;
+    updateTransposeDisplay();
+    resetCurrentExercise();
+  });
 
-  document.getElementById(
-    'transUpBtn'
-  ).addEventListener(
-    'click',
-    () => {
-
-      transposeSemitones++;
-
-      updateTransposeDisplay();
-
-      resetCurrentExercise();
-
-    }
-  );
-
-  /*
-   * ============================================================
-   * TRANSPOSE DOWN
-   * ============================================================
-   */
-
-  document.getElementById(
-    'transDownBtn'
-  ).addEventListener(
-    'click',
-    () => {
-
-      transposeSemitones--;
-
-      updateTransposeDisplay();
-
-      resetCurrentExercise();
-
-    }
-  );
+  document.getElementById('transDownBtn').addEventListener('click', () => {
+    transposeSemitones--;
+    updateTransposeDisplay();
+    resetCurrentExercise();
+  });
 
   function updateTransposeDisplay() {
-
-    document.getElementById(
-      'transValDisplay'
-    ).textContent =
-      `${
-        transposeSemitones > 0
-          ? '+'
-          : ''
-      }${transposeSemitones} ST`;
+    document.getElementById('transValDisplay').textContent =
+      `${transposeSemitones > 0 ? '+' : ''}${transposeSemitones} ST`;
   }
 
-  /*
-   * ============================================================
-   * RESET CURRENT EXERCISE
-   * ============================================================
-   */
-
   function resetCurrentExercise() {
-
     activeMidiNotes.clear();
-
     chordWasCompleted = false;
-
     clearKeyboardHighlights();
-
     currentProgressionStep = 0;
-
-    hasEvaluatedCurrentChord =
-      false;
-
-    chordStartTime =
-      Date.now();
-
-    document.getElementById(
-      'matchStatus'
-    ).textContent =
-      'Play target notes on your keyboard...';
-
-    document.getElementById(
-      'matchStatus'
-    ).className = '';
-
+    hasEvaluatedCurrentChord = false;
+    chordStartTime = Date.now();
+    document.getElementById('matchStatus').textContent = 'Play target notes on your keyboard...';
+    document.getElementById('matchStatus').className = '';
     drawScore();
   }
 
-  /*
-   * ============================================================
-   * FLOW MODE
-   * ============================================================
-   */
+  document.getElementById('flowModeBtn').addEventListener('click', () => {
+    isFlowModeActive = !isFlowModeActive;
+    const btn = document.getElementById('flowModeBtn');
 
-  document.getElementById(
-    'flowModeBtn'
-  ).addEventListener(
-    'click',
-    () => {
+    if (isFlowModeActive) {
+      btn.textContent = 'Flow Mode: ON 🌊';
+      btn.style.background = '#059669';
 
-      isFlowModeActive =
-        !isFlowModeActive;
+      if (flowTimerInterval) clearInterval(flowTimerInterval);
 
-      const btn =
-        document.getElementById(
-          'flowModeBtn'
-        );
+      flowTimerInterval = setInterval(() => {
+        currentProgressionStep++;
+        activeMidiNotes.clear();
+        clearKeyboardHighlights();
+        hasEvaluatedCurrentChord = false;
+        chordStartTime = Date.now();
+        drawScore();
+        updateFeedback();
+      }, 3000);
+    } else {
+      btn.textContent = 'Flow Mode: OFF';
+      btn.style.background = '#2563eb';
+      if (flowTimerInterval) {
+        clearInterval(flowTimerInterval);
+        flowTimerInterval = null;
+      }
+    }
+  });
 
-      if (
-        isFlowModeActive
-      ) {
+  document.getElementById('toggleMetronomeBtn').addEventListener('click', async () => {
+    try {
+      await Tone.start();
+      if (Tone.context.state !== 'running') await Tone.context.resume();
 
-        btn.textContent =
-          'Flow Mode: ON 🌊';
+      const bpm = parseInt(document.getElementById('bpmInput').value, 10) || 100;
+      Tone.Transport.bpm.value = bpm;
 
-        btn.style.background =
-          '#059669';
+      if (!isMetronomeRunning) {
+        metronomeEventId = Tone.Transport.scheduleRepeat(time => {
+          clickSynth.triggerAttackRelease('C4', '8n', time);
+        }, '4n');
 
-        /*
-         * Prevent duplicate intervals.
-         */
-
-        if (
-          flowTimerInterval
-        ) {
-
-          clearInterval(
-            flowTimerInterval
-          );
-        }
-
-        flowTimerInterval =
-          setInterval(
-            () => {
-
-              currentProgressionStep++;
-
-              activeMidiNotes.clear();
-
-              clearKeyboardHighlights();
-
-              hasEvaluatedCurrentChord =
-                false;
-
-              chordStartTime =
-                Date.now();
-
-              drawScore();
-
-              updateFeedback();
-
-            },
-            3000
-          );
-
+        Tone.Transport.start();
+        isMetronomeRunning = true;
+        const btn = document.getElementById('toggleMetronomeBtn');
+        btn.textContent = 'Stop Click';
+        btn.style.background = '#dc2626';
       } else {
-
-        btn.textContent =
-          'Flow Mode: OFF';
-
-        btn.style.background =
-          '#2563eb';
-
-        if (
-          flowTimerInterval
-        ) {
-
-          clearInterval(
-            flowTimerInterval
-          );
-
-          flowTimerInterval =
-            null;
+        Tone.Transport.stop();
+        if (metronomeEventId !== null) {
+          Tone.Transport.clear(metronomeEventId);
+          metronomeEventId = null;
         }
+        isMetronomeRunning = false;
+        const btn = document.getElementById('toggleMetronomeBtn');
+        btn.textContent = 'Start Click';
+        btn.style.background = '#2563eb';
       }
-
+    } catch (error) {
+      console.error('Metronome error:', error);
     }
-  );
+  });
 
-  /*
-   * ============================================================
-   * METRONOME
-   * ============================================================
-   */
+  document.getElementById('bpmInput').addEventListener('change', event => {
+    let bpm = parseInt(event.target.value, 10) || 100;
+    bpm = Math.max(40, Math.min(240, bpm));
+    event.target.value = bpm;
+    Tone.Transport.bpm.value = bpm;
+  });
 
-  document.getElementById(
-    'toggleMetronomeBtn'
-  ).addEventListener(
-    'click',
-    async () => {
-
-      try {
-
-        await Tone.start();
-
-        if (
-          Tone.context.state !==
-          'running'
-        ) {
-
-          await Tone.context.resume();
-        }
-
-        const bpm =
-          parseInt(
-            document.getElementById(
-              'bpmInput'
-            ).value,
-            10
-          ) || 100;
-
-        Tone.Transport.bpm.value =
-          bpm;
-
-        if (
-          !isMetronomeRunning
-        ) {
-
-          metronomeEventId =
-            Tone.Transport.scheduleRepeat(
-              time => {
-
-                clickSynth.triggerAttackRelease(
-                  'C4',
-                  '8n',
-                  time
-                );
-
-              },
-              '4n'
-            );
-
-          Tone.Transport.start();
-
-          isMetronomeRunning =
-            true;
-
-          const btn =
-            document.getElementById(
-              'toggleMetronomeBtn'
-            );
-
-          btn.textContent =
-            'Stop Click';
-
-          btn.style.background =
-            '#dc2626';
-
-        } else {
-
-          Tone.Transport.stop();
-
-          if (
-            metronomeEventId !== null
-          ) {
-
-            Tone.Transport.clear(
-              metronomeEventId
-            );
-
-            metronomeEventId =
-              null;
-          }
-
-          isMetronomeRunning =
-            false;
-
-          const btn =
-            document.getElementById(
-              'toggleMetronomeBtn'
-            );
-
-          btn.textContent =
-            'Start Click';
-
-          btn.style.background =
-            '#2563eb';
-        }
-
-      } catch (error) {
-
-        console.error(
-          'Metronome error:',
-          error
-        );
-      }
-
-    }
-  );
-
-  /*
-   * ============================================================
-   * BPM
-   * ============================================================
-   */
-
-  document.getElementById(
-    'bpmInput'
-  ).addEventListener(
-    'change',
-    event => {
-
-      let bpm =
-        parseInt(
-          event.target.value,
-          10
-        ) || 100;
-
-      bpm =
-        Math.max(
-          40,
-          Math.min(
-            240,
-            bpm
-          )
-        );
-
-      event.target.value =
-        bpm;
-
-      Tone.Transport.bpm.value =
-        bpm;
-    }
-  );
-
-  /*
-   * ============================================================
-   * NEXT CHORD
-   * ============================================================
-   */
-
-  document.getElementById(
-    'nextChordBtn'
-  ).addEventListener(
-    'click',
-    () => {
-
-      currentProgressionStep++;
-
-      activeMidiNotes.clear();
-
-      chordWasCompleted = false;
-
-      clearKeyboardHighlights();
-
-      hasEvaluatedCurrentChord=
-        false;
-
-      chordStartTime =
-        Date.now();
-
-      document.getElementById(
-        'matchStatus'
-      ).textContent =
-        'Play target notes on your keyboard...';
-
-      document.getElementById(
-        'matchStatus'
-      ).className = '';
-
-      drawScore();
-
-    }
-  );
-
-  /*
-   * ============================================================
-   * MIDI ACCESS
-   * ============================================================
-   */
+  document.getElementById('nextChordBtn').addEventListener('click', () => {
+    currentProgressionStep++;
+    activeMidiNotes.clear();
+    chordWasCompleted = false;
+    clearKeyboardHighlights();
+    hasEvaluatedCurrentChord = false;
+    chordStartTime = Date.now();
+    document.getElementById('matchStatus').textContent = 'Play target notes on your keyboard...';
+    document.getElementById('matchStatus').className = '';
+    drawScore();
+  });
 
   async function setupMIDI() {
-
-    const status =
-      document.getElementById(
-        'midiStatus'
-      );
-
-    if (
-      !navigator.requestMIDIAccess
-    ) {
-
-      status.textContent =
-        'Web MIDI unavailable in this browser';
-
+    const status = document.getElementById('midiStatus');
+    if (!navigator.requestMIDIAccess) {
+      status.textContent = 'Web MIDI unavailable in this browser';
       return;
     }
 
     try {
-
-      const midiAccess =
-        await navigator.requestMIDIAccess();
-
+      const midiAccess = await navigator.requestMIDIAccess();
       let inputCount = 0;
 
-      for (
-        const input
-        of midiAccess.inputs.values()
-      ) {
-
+      for (const input of midiAccess.inputs.values()) {
         inputCount++;
-
-        input.onmidimessage =
-          handleMIDIMessage;
+        input.onmidimessage = handleMIDIMessage;
       }
 
-      if (
-        inputCount > 0
-      ) {
+      status.textContent = inputCount > 0
+        ? `Connected ✓ (${inputCount} input${inputCount === 1 ? '' : 's'})`
+        : 'MIDI available — no keyboard detected';
 
-        status.textContent =
-          `Connected ✓ (${inputCount} input${
-            inputCount === 1 ? '' : 's'
-          })`;
-
-      } else {
-
-        status.textContent =
-          'MIDI available — no keyboard detected';
-      }
-
-      /*
-       * Detect a MIDI device being connected later.
-       */
-
-      midiAccess.onstatechange =
-        () => {
-
-          let count = 0;
-
-          for (
-            const input
-            of midiAccess.inputs.values()
-          ) {
-
-            count++;
-
-            input.onmidimessage =
-              handleMIDIMessage;
-          }
-
-          status.textContent =
-            count > 0
-              ? `Connected ✓ (${count} input${
-                  count === 1
-                    ? ''
-                    : 's'
-                })`
-              : 'MIDI available — no keyboard detected';
-        };
-
+      midiAccess.onstatechange = () => {
+        let count = 0;
+        for (const input of midiAccess.inputs.values()) {
+          count++;
+          input.onmidimessage = handleMIDIMessage;
+        }
+        status.textContent = count > 0
+          ? `Connected ✓ (${count} input${count === 1 ? '' : 's'})`
+          : 'MIDI available — no keyboard detected';
+      };
     } catch (error) {
-
-      console.error(
-        'MIDI access error:',
-        error
-      );
-
-      status.textContent =
-        'MIDI access denied/unavailable';
+      console.error('MIDI access error:', error);
+      status.textContent = 'MIDI access denied/unavailable';
     }
   }
 
-  /*
-   * ============================================================
-   * MIDI MESSAGE
-   * ============================================================
-   */
-
   function handleMIDIMessage(event) {
+    const data = event.data;
+    if (!data || data.length < 2) return;
 
-    const data =
-      event.data;
+    const status = data[0];
+    const note = data[1];
+    const velocity = data[2] || 0;
+    const command = status >> 4;
 
-    if (
-      !data ||
-      data.length < 2
-    ) {
-      return;
-    }
-
-    const status =
-      data[0];
-
-    const note =
-      data[1];
-
-    const velocity =
-      data[2] || 0;
-
-    const command =
-      status >> 4;
-
-    /*
-     * Note On
-     */
-
-    if (
-      command === 9 &&
-      velocity > 0
-    ) {
-
+    if (command === 9 && velocity > 0) {
       handleNoteOn(note);
-
-    }
-
-    /*
-     * Note Off
-     */
-
-    else if (
-      command === 8 ||
-      (
-        command === 9 &&
-        velocity === 0
-      )
-    ) {
-
+    } else if (command === 8 || (command === 9 && velocity === 0)) {
       handleNoteOff(note);
     }
   }
 
-  /*
-   * ============================================================
-   * AUDIO ENABLE
-   * ============================================================
-   */
-
-  document.getElementById(
-    'enableAudio'
-  ).addEventListener(
-    'click',
-    async () => {
-
-      try {
-
-        await Tone.start();
-
-        if (
-          Tone.context.state !==
-          'running'
-        ) {
-
-          await Tone.context.resume();
-        }
-
-        audioEnabled =
-          true;
-
-        const btn =
-          document.getElementById(
-            'enableAudio'
-          );
-
-        btn.textContent =
-          'Audio Active ✓';
-
-        btn.style.background =
-          '#059669';
-
-      } catch (error) {
-
-        console.error(
-          'Audio error:',
-          error
-        );
-      }
+  document.getElementById('enableAudio').addEventListener('click', async () => {
+    try {
+      await Tone.start();
+      if (Tone.context.state !== 'running') await Tone.context.resume();
+      audioEnabled = true;
+      const btn = document.getElementById('enableAudio');
+      btn.textContent = 'Audio Active ✓';
+      btn.style.background = '#059669';
+    } catch (error) {
+      console.error('Audio error:', error);
     }
-  );
-
-  /*
-   * ============================================================
-   * SETTINGS CHANGE
-   * ============================================================
-   */
+  });
 
   [
-    'keySelect',
-    'clefSelect',
-    'genreSelect',
-    'chordsPerPage',
-    'modeSelect',
-    'rhythmSelect',
-    'typeSelect',
-    'inversionSelect'
-  ].forEach(
-    id => {
-
-      document
-        .getElementById(id)
-        .addEventListener(
-          'change',
-          () => {
-
-            /*
-             * Stop active notes.
-             */
-
-            activeMidiNotes.clear();
-
-            clearKeyboardHighlights();
-
-            /*
-             * Start the new exercise from step 1.
-             */
-
-            currentProgressionStep =
-              0;
-
-            hasEvaluatedCurrentChord =
-              false;
-
-            chordStartTime =
-              Date.now();
-
-            document.getElementById(
-              'matchStatus'
-            ).textContent =
-              'Play target notes on your keyboard...';
-
-            document.getElementById(
-              'matchStatus'
-            ).className = '';
-
-            drawScore();
-          }
-        );
-
-    }
-  );
-
-  /*
-   * ============================================================
-   * WINDOW RESIZE
-   *
-   * Debounced so dragging the browser window doesn't create
-   * hundreds of SVG render operations.
-   * ============================================================
-   */
+    'keySelect', 'clefSelect', 'genreSelect', 'chordsPerPage',
+    'modeSelect', 'rhythmSelect', 'typeSelect', 'inversionSelect'
+  ].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+      activeMidiNotes.clear();
+      clearKeyboardHighlights();
+      currentProgressionStep = 0;
+      hasEvaluatedCurrentChord = false;
+      chordStartTime = Date.now();
+      document.getElementById('matchStatus').textContent = 'Play target notes on your keyboard...';
+      document.getElementById('matchStatus').className = '';
+      drawScore();
+    });
+  });
 
   let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { drawScore(); }, 100);
+  });
 
-  window.addEventListener(
-    'resize',
-    () => {
+  window.addEventListener('beforeunload', () => {
+    if (flowTimerInterval) clearInterval(flowTimerInterval);
+    if (metronomeEventId !== null) Tone.Transport.clear(metronomeEventId);
+  });
 
-      clearTimeout(
-        resizeTimer
-      );
-
-      resizeTimer =
-        setTimeout(
-          () => {
-            drawScore();
-          },
-          100
-        );
-    }
-  );
-
-  /*
-   * ============================================================
-   * CLEANUP
-   * ============================================================
-   */
-
-  window.addEventListener(
-    'beforeunload',
-    () => {
-
-      if (
-        flowTimerInterval
-      ) {
-
-        clearInterval(
-          flowTimerInterval
-        );
-      }
-
-      if (
-        metronomeEventId !== null
-      ) {
-
-        Tone.Transport.clear(
-          metronomeEventId
-        );
-      }
-
-    }
-  );
-
-  /*
-   * ============================================================
-   * INITIALISE
-   * ============================================================
-   */
-
-  window.addEventListener(
-    'load',
-    async () => {
-
-      /*
-       * Draw immediately.
-       */
-
-      drawScore();
-
-      /*
-       * Then initialise MIDI.
-       */
-
-      await setupMIDI();
-
-    }
-  );
-
-  /*
-   * Initial draw for environments where load has already fired.
-   */
+  window.addEventListener('load', async () => {
+    drawScore();
+    await setupMIDI();
+  });
 
   drawScore();
-
 </script>
 
 </body>
